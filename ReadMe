@@ -1,2 +1,42 @@
-Testing
-123456789
+## Git management
+
+Use either powershell or github desktop app
+
+
+## Branching basics
+
+1. Always start from an up-to-date `main` branch.
+
+2. Create a descriptive branch for your work
+
+Naming tips:
+
+- Use kebab-case or snake_case for branch names.
+- Keep names short but descriptive: `feature/login`, `fix/null-pointer`.
+
+## Make small, focused commits
+
+- Commit related changes together with clear messages.
+- Use present-tense messages and reference issue numbers when relevant.
+
+
+## Opening a Pull Request (PR)
+
+1. Push your branch to GitHub (see `git push` above).
+
+2. On GitHub, open a Pull Request from your branch into `main`.
+
+3. In the PR description, explain what changed, why, and include screenshots or sample outputs if helpful.
+
+
+
+
+## Keeping your branch up-to-date
+
+Before your PR is merged, regularly update your branch to include the latest `main` to reduce conflicts.
+
+
+## After merging
+
+Once your PR is merged, delete the remote branch to keep the repo clean:
+
