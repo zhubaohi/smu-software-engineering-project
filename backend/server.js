@@ -14,10 +14,10 @@ const bodyParser = require("body-parser");
 const app = express();
 
 // Enable CORS for your frontend domain
-// Use environment variable for production or default to localhost for development
+// The frontend domain (localhost:3022) is allowed to make requests to this server.
 app.use(
   cors({
-    origin: process.env.WEBSITE_HOSTNAME ? `https://${process.env.WEBSITE_HOSTNAME}` : "http://localhost:3022",
+    origin: "http://localhost:3022", // Adjust this for your production domain
   })
 );
 
@@ -206,7 +206,7 @@ app.get("*", (req, res) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 5234;
+const PORT = 5234;
 app.listen(PORT, () => {
   console.log(`Backend server is running on port ${PORT}`);
 });
