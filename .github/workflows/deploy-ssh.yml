@@ -1,0 +1,83 @@
+name: Deploy to Server via SSH
+
+on:
+  push:
+    branches: [ create-workflow ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend deps and build
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Prepare deployment package
+        run: |
+          tar -czf release.tgz \
+            build \
+            backend \
+            package.json package-lock.json || true
+
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add remote host to known_hosts
+        run: |
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+
+      - name: Upload files to server
+        run: |
+          scp -o StrictHostKeyChecking=no release.tgz $SSH_USER@$SSH_HOST:$DEPLOY_PATH/
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+      - name: Deploy on server
+        run: |
+          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST << 'EOF'
+          set -e
+          cd "$DEPLOY_PATH"
+          mkdir -p current releases
+          ts=$(date +%Y%m%d%H%M%S)
+          mkdir -p releases/$ts
+          tar -xzf release.tgz -C releases/$ts
+          rm -f release.tgz
+          ln -sfn releases/$ts current
+          cd current
+          # install backend deps
+          cd backend
+          npm ci || npm install
+          # optionally start with pm2 if installed, otherwise background node
+          if command -v pm2 >/dev/null 2>&1; then
+            pm2 startOrReload ecosystem.config.js || pm2 start server.js --name smu-backend --time
+            pm2 save
+          else
+            # kill old node on port 6789 (if any)
+            if command -v fuser >/dev/null 2>&1; then fuser -k 6789/tcp || true; fi
+            nohup npm start >/dev/null 2>&1 &
+          fi
+          # ensure static frontend is placed at current/build
+          cd "$DEPLOY_PATH/current"
+          echo "Deployment completed at $(date)"
+          EOF
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
