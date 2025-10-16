@@ -2,7 +2,7 @@ name: Deploy to Server via SSH
 
 on:
   push:
-    branches: [ create-workflow ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -10,25 +10,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (main)
         uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          fetch-depth: 0
+          ref: main
 
-      - name: Install frontend deps and build
+      - name: Create archive of repository (exclude .git)
         run: |
-          npm ci || npm install
-          npm run build
-
-      - name: Prepare deployment package
-        run: |
-          tar -czf release.tgz \
-            build \
-            backend \
-            package.json package-lock.json || true
+          tar --exclude='.git' -czf repo.tgz .
 
       - name: Add SSH key
         uses: webfactory/ssh-agent@v0.9.0
@@ -41,40 +31,41 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
 
-      - name: Upload files to server
+      - name: Upload repository to server
         run: |
-          scp -o StrictHostKeyChecking=no release.tgz $SSH_USER@$SSH_HOST:$DEPLOY_PATH/
+          scp -o StrictHostKeyChecking=no repo.tgz $SSH_USER@$SSH_HOST:$DEPLOY_PATH/
         env:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 
-      - name: Deploy on server
+      - name: Deploy and run npm on server
         run: |
-          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST << 'EOF'
-          set -e
+          ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST "export DEPLOY_PATH='$DEPLOY_PATH'; bash -s" << 'EOF'
+          set -euo pipefail
+          mkdir -p "$DEPLOY_PATH"
           cd "$DEPLOY_PATH"
-          mkdir -p current releases
-          ts=$(date +%Y%m%d%H%M%S)
-          mkdir -p releases/$ts
-          tar -xzf release.tgz -C releases/$ts
-          rm -f release.tgz
-          ln -sfn releases/$ts current
-          cd current
-          # install backend deps
+          TMP_DIR="deploy_$(date +%Y%m%d%H%M%S)"
+          mkdir -p "$TMP_DIR"
+          tar -xzf repo.tgz -C "$TMP_DIR"
+          rm -f repo.tgz
+          # preserve uploads if they exist on server
+          if [ -d "src/uploads" ] && [ -d "$TMP_DIR/src" ]; then
+            mkdir -p "$TMP_DIR/src/uploads"
+            cp -rn src/uploads/* "$TMP_DIR/src/uploads/" 2>/dev/null || true
+          fi
+          # replace current contents with new
+          rsync -a --delete "$TMP_DIR"/ ./
+          rm -rf "$TMP_DIR"
+          # install and build frontend at repo root
+          npm ci || npm install
+          npm run build
+          # install and start backend
           cd backend
           npm ci || npm install
-          # optionally start with pm2 if installed, otherwise background node
-          if command -v pm2 >/dev/null 2>&1; then
-            pm2 startOrReload ecosystem.config.js || pm2 start server.js --name smu-backend --time
-            pm2 save
-          else
-            # kill old node on port 6789 (if any)
-            if command -v fuser >/dev/null 2>&1; then fuser -k 6789/tcp || true; fi
-            nohup npm start >/dev/null 2>&1 &
-          fi
-          # ensure static frontend is placed at current/build
-          cd "$DEPLOY_PATH/current"
+          # try to free port 6789 if needed
+          if command -v fuser >/dev/null 2>&1; then fuser -k 6789/tcp || true; fi
+          nohup npm start >/dev/null 2>&1 &
           echo "Deployment completed at $(date)"
           EOF
         env:
