@@ -54,12 +54,17 @@ jobs:
             mkdir -p "$TMP_DIR/src/uploads"
             cp -rn src/uploads/* "$TMP_DIR/src/uploads/" 2>/dev/null || true
           fi
-          # replace current contents with new
-          rsync -a --delete "$TMP_DIR"/ ./
+          # replace current contents with new (use rsync if available, else fallback)
+          if command -v rsync >/dev/null 2>&1; then
+            rsync -a --delete "$TMP_DIR"/ ./
+          else
+            # fallback: delete everything except TMP_DIR then copy over
+            find . -mindepth 1 -maxdepth 1 ! -name "$(basename "$TMP_DIR")" -exec rm -rf {} +
+            shopt -s dotglob || true
+            cp -a "$TMP_DIR"/* ./ || true
+            shopt -u dotglob || true
+          fi
           rm -rf "$TMP_DIR"
-          # install and build frontend at repo root
-          npm ci || npm install
-          npm run build
           # install and start backend
           cd backend
           npm ci || npm install
