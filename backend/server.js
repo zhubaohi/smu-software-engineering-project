@@ -206,7 +206,7 @@ app.get("*", (req, res) => {
 });
 
 // Start the server
-const PORT = 5234;
+const PORT = 6789;
 app.listen(PORT, () => {
   console.log(`Backend server is running on port ${PORT}`);
 });
